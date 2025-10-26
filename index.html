@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Johnny the Runner</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #3e2f1c;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      color: #f4d88c;
+      text-align: center;
+    }
+
+    canvas {
+      border-radius: 20px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+
+    #startBtn {
+      margin-top: 20px;
+      padding: 14px 28px;
+      font-size: 24px;
+      background-color: #1e1e1e;
+      color: #f4d88c;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: background-color 0.3s;
+    }
+
+    #startBtn:hover {
+      background-color: #2c2c2c;
+    }
+
+    #instructions {
+      max-width: 600px;
+      font-size: 20px;
+      line-height: 1.5;
+      padding: 0 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Johnny the Runner</h1>
+  <div id="instructions">
+    🏃 Meet Johnny, the fearless runner!<br>
+    🪨 Tap or press UP/SPACE to jump and skip obstacles.<br>
+    🎮 Click the button below to start the game.
+  </div>
+  <button id="startBtn">Play</button>
+
+  <script>
+    let game;
+    let johnny, ground, obstacles, cursors, scoreText, gameOverText, restartBtn;
+    let gameOver = false, score = 0;
+    const groundY = 150;
+
+    document.getElementById('startBtn').addEventListener('click', () => {
+      document.getElementById('startBtn').style.display = 'none';
+      document.getElementById('instructions').style.display = 'none';
+
+      const config = {
+        type: Phaser.AUTO,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { y: 1500 }, debug: false }
+        },
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        },
+        scene: { preload, create, update }
+      };
+
+      game = new Phaser.Game(config);
+    });
+
+    function preload() {
+      this.load.setBaseURL('https://labs.phaser.io');
+      this.load.image('bg', 'assets/skies/sky4.png');
+      this.load.image('ground', 'assets/sprites/platform.png');
+      this.load.image('trap', 'assets/sprites/saw.png');
+      this.load.spritesheet('johnny', 'assets/sprites/dude.png', { frameWidth: 32, frameHeight: 48 });
+      this.load.image('restart', 'assets/ui/restart.png');
+    }
+
+    function create() {
+      this.bg = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'bg')
+        .setOrigin(0, 0)
+        .setScrollFactor(0);
+
+      const groundTop = this.scale.height - groundY;
+      ground = this.add.tileSprite(0, groundTop, this.scale.width, 50, 'ground')
+        .setOrigin(0, 0);
+      this.physics.add.existing(ground, true);
+
+      johnny = this.physics.add.sprite(150, groundTop - 50, 'johnny').setScale(2);
+      johnny.setCollideWorldBounds(true);
+      johnny.setGravityY(1000);
+      johnny.setFlipX(true);
+      johnny.body.setSize(20, 48);
+      johnny.body.setOffset(6, 0);
+      this.physics.add.collider(johnny, ground);
+
+      this.anims.create({
+        key: 'run',
+        frames: this.anims.generateFrameNumbers('johnny', { start: 0, end: 3 }),
+        frameRate: 10,
+        repeat: -1
+      });
+      this.anims.create({
+        key: 'idle',
+        frames: [ { key: 'johnny', frame: 4 } ],
+        frameRate: 10
+      });
+      johnny.play('run');
+
+      obstacles = this.physics.add.group();
+      this.physics.add.collider(obstacles, ground);
+      this.physics.add.collider(johnny, obstacles, hitObstacle, null, this);
+
+      cursors = this.input.keyboard.createCursorKeys();
+      this.input.on('pointerdown', jump, this);
+
+      scoreText = this.add.text(16, 16, 'Score: 0', {
+        fontSize: '24px',
+        fill: '#f4d88c',
+        backgroundColor: '#1e1e1e',
+        padding: { x: 10, y: 5 },
+        borderRadius: 8
+      });
+
+      this.time.addEvent({
+        delay: 1800,
+        callback: spawnObstacle,
+        callbackScope: this,
+        loop: true
+      });
+    }
+
+    function update() {
+      if (gameOver) return;
+
+      this.bg.tilePositionX += 2;
+      ground.tilePositionX += 4;
+
+      if ((cursors.up.isDown || cursors.space.isDown) && johnny.body.touching.down) {
+        jump.call(this);
+      }
+
+      score += 1;
+      scoreText.setText('Score: ' + Math.floor(score / 10));
+
+      obstacles.getChildren().forEach(obs => {
+        if (obs.x < -50 || obs.x > this.scale.width + 50) {
+          obs.destroy();
+        }
+      });
+    }
+
+    function jump() {
+      if (johnny.body.touching.down) {
+        johnny.setVelocityY(-800);
+      }
+    }
+
+    function spawnObstacle() {
+      if (gameOver) return;
+
+      const scale = Phaser.Math.FloatBetween(0.15, 0.3);
+      const obstacle = obstacles.create(this.scale.width + 50, this.scale.height - groundY - 15, 'trap')
+        .setScale(scale)
+        .setOrigin(0.5, 1);
+
+      obstacle.setVelocityX(-200);
+      obstacle.setImmovable(true);
+      obstacle.body.allowGravity = false;
+      obstacle.body.setSize(obstacle.width * scale, obstacle.height * scale, true);
+      obstacle.body.setOffset(0, 0);
+    }
+
+    function hitObstacle() {
+      this.physics.pause();
+      johnny.setTint(0xff0000);
+      johnny.play('idle');
+      gameOver = true;
+
+      gameOverText = this.add.text(this.scale.width / 2, this.scale.height / 2 - 50, 'GAME OVER', {
+        fontSize: '48px',
+        fill: '#f00',
+        backgroundColor: '#1e1e1e',
+        padding: { x: 20, y: 10 },
+        borderRadius: 12
+      }).setOrigin(0.5);
+
+      restartBtn = this.add.image(this.scale.width / 2, this.scale.height / 2 + 60, 'restart')
+        .setInteractive().setScale(0.3).setOrigin(0.5);
+      restartBtn.on('pointerdown', () => this.scene.restart());
+
+      const playAgainBtn = this.add.text(this.scale.width / 2, this.scale.height / 2 + 130, 'Play Again', {
+        fontSize: '32px',
+        fill: '#f4d88c',
+        backgroundColor: '#1e1e1e',
+        padding: { x: 20, y: 10 },
+        borderRadius: 12
+      }).setOrigin(0.5).setInteractive();
+
+      playAgainBtn.on('pointerdown', () => this.scene.restart());
+    }
+  </script>
+</body>
+</html>
+
